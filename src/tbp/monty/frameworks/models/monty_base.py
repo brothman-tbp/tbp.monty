@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from tbp.monty import telemetry
 from tbp.monty.attention.attention_system import (
@@ -66,7 +67,7 @@ class MontyBase(Monty):
                 of learning modules and decides next action. Conceptually, this is
                 the subcortical motor area.
             sm_to_agent_dict: dictionary mapping each sensor module id to the
-                list of habitat agents it receives input from. This is to simulate
+                list of agents it receives input from. This is to simulate
                 columns with wide receptive fields that receive input from multiple
                 sensors. TODO: Do we still need this?
             sm_to_lm_matrix: nested array that governs which sensor modules a
@@ -111,7 +112,6 @@ class MontyBase(Monty):
         self.experiment_mode: ExperimentMode | None = (
             None  # initialize to neither training nor testing
         )
-        self.total_steps = 0
         # Number of overall steps. Counts also steps where no LM update was performed.
         self.episode_steps = 0
         # Number of steps in which at least 1 LM received information during exploration
@@ -214,7 +214,6 @@ class MontyBase(Monty):
         proprioceptive_state: ProprioceptiveState,
     ) -> list[Action]:
         self.aggregate_sensory_inputs(ctx, observations, proprioceptive_state)
-        self.total_steps += 1
         self.episode_steps += 1
         # For each of the learning modules, update the list of processed
         # steps, and the stepwise target object
@@ -330,6 +329,7 @@ class MontyBase(Monty):
             self._goals.extend(goals)
 
         regions = [sm.propose_region() for sm in self.sensor_modules]
+        regions.extend([lm.propose_region() for lm in self.learning_modules])
 
         self._goals = self._attention_system.step(self._goals, regions)
 
@@ -546,7 +546,6 @@ class MontyBase(Monty):
         self.exploratory_steps = 0
 
     def update_step_counters(self):
-        self.total_steps += 1
         self.episode_steps += 1
 
         if self.step_type == "matching_step":

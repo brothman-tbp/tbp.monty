@@ -51,21 +51,13 @@ class MontySupervisedObjectPretrainingExperiment(MontyExperiment):
         super().setup_experiment(config)
         if "agents" in config["environment"]["env_init_args"]:
             agents_config = config["environment"]["env_init_args"]["agents"]
-            # Habitat agents are configured using `agent_args`.
-            # The way we configure Habitat agents only allows for one agent.
-            if "agent_args" in agents_config:
-                self.sensor_pos = np.array(agents_config["agent_args"]["positions"])
-            else:
-                # MuJoCo agents are configured using a list of partially applied
-                # agent constructors.
-                # TODO: support more than one agent, this assumes there's only one.
-
-                # Introspect the first agent partial to determine what the
-                # original sensor positions were.
-                sensor_cfgs = agents_config[0].keywords["sensor_configs"]
-                self.sensor_pos = np.array(
-                    [sensor["position"] for sensor in sensor_cfgs.values()]
-                )
+            # Introspect the first agent partial to determine what the
+            # original sensor positions were.
+            # TODO: Support more than one agent, this assumes there's only one.
+            sensor_cfgs = agents_config[0].keywords["sensor_configs"]
+            self.sensor_pos = np.array(
+                [sensor["position"] for sensor in sensor_cfgs.values()]
+            )
         else:
             self.sensor_pos = np.array([0, 0, 0])
 
@@ -149,8 +141,6 @@ class MontySupervisedObjectPretrainingExperiment(MontyExperiment):
         self.experiment_mode = ExperimentMode.TRAIN
         self.logger_handler.pre_train(self.logger_args)
         self.model.set_experiment_mode(self.experiment_mode)
-        for sm in self.model.sensor_modules:
-            sm.save_raw_obs = False
         for _ in range(self.n_train_epochs):
             self.run_epoch()
         self.logger_handler.post_train(self.logger_args)

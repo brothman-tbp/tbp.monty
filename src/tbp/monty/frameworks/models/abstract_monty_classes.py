@@ -10,7 +10,8 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, Collection, Dict, Protocol, Sequence
+from collections.abc import Collection, Sequence
+from typing import Any, Protocol
 
 from tbp.monty.cmp import AttentionRegion, Goal, Message
 from tbp.monty.context import RuntimeContext
@@ -43,13 +44,13 @@ __all__ = [
 ]
 
 
-class AgentObservations(Dict[SensorID, SensorObservation]):
+class AgentObservations(dict[SensorID, SensorObservation]):
     """Observations from an agent."""
 
     pass
 
 
-class Observations(Dict[AgentID, AgentObservations]):
+class Observations(dict[AgentID, AgentObservations]):
     """Observations from the environment."""
 
     pass
@@ -341,6 +342,10 @@ class RuntimeLearningModule(Protocol):
         """
         ...
 
+    def propose_region(self) -> AttentionRegion:
+        """Return the attention region to attend to."""
+        ...
+
     def get_output(self) -> Message | None:
         """Return learning module output (same format as input)."""
         ...
@@ -403,6 +408,10 @@ class LearningModule(
 
     @abc.abstractmethod
     def propose_goals(self) -> list[Goal]:
+        pass
+
+    @abc.abstractmethod
+    def propose_region(self) -> AttentionRegion:
         pass
 
     @abc.abstractmethod

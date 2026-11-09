@@ -13,11 +13,9 @@ import json
 from pathlib import Path
 
 from tools.github_readme_sync.hierarchy import check_hierarchy_file
+from tools.github_readme_sync.models import SCHEMA_VERSION, PreviewBundle
 from tools.github_readme_sync.readme import ReadMe
-from tools.github_readme_sync.upload import load_doc
-
-SCHEMA_VERSION = 1
-"""Current schema version for documentation preview bundles."""
+from tools.github_readme_sync.upload import load_doc, upload_rendered
 
 
 def render_preview(
@@ -28,11 +26,11 @@ def render_preview(
     head_sha: str,
     base_ref: str,
 ) -> None:
-    """Render local documentation into a preview bundle.
+    """Render local documentation into a validated preview bundle.
 
     Loads the documentation hierarchy and source files, renders each document
-    body, records the pull request identity metadata, and writes the bundle
-    to disk as JSON.
+    body, records the pull request identity metadata, validates the resulting
+    bundle and writes it to disk as JSON.
 
     Args:
         folder: Directory containing ``hierarchy.md`` and the documentation
@@ -69,6 +67,18 @@ def render_preview(
         },
         "documents": documents,
     }
+
+    # Validate our own output too. This keeps the producer and consumer on the
+    # same schema and catches accidental format drift before the artifact upload.
+    PreviewBundle.model_validate(
+        bundle,
+        context={
+            "expected_repository": repository,
+            "expected_pr_number": pr_number,
+            "expected_head_sha": head_sha,
+            "expected_base_ref": base_ref,
+        },
+    )
 
     with output_file.open(mode="w", encoding="utf-8") as f:
         json.dump(bundle, f, ensure_ascii=False)
@@ -127,3 +137,90 @@ def _render_children(
         rendered_children.append(rendered_doc)
 
     return rendered_children
+
+
+def publish_preview(
+    bundle_file: Path,
+    rdme: ReadMe,
+    expected_repository: str,
+    expected_pr_number: int,
+    expected_head_sha: str,
+    expected_base_ref: str,
+) -> None:
+    """Validate and publish a pre-rendered preview bundle to ReadMe.
+
+    Requires a non-stable preview version, loads the bundle, validates it
+    against trusted pull request metadata, and uploads the pre-rendered
+    documentation hierarchy.
+
+    Args:
+        bundle_file: Path to the rendered preview JSON bundle.
+        rdme: ReadMe client configured for the target preview version.
+        expected_repository: Repository name expected in the bundle.
+        expected_pr_number: Pull request number expected in the bundle.
+        expected_head_sha: Pull request head SHA expected in the bundle.
+        expected_base_ref: Base branch expected in the bundle.
+
+    Raises:
+        ValueError: If the target is not a preview version or the bundle fails
+        validation.
+    """
+    if not rdme.version_has_suffix():
+        raise ValueError("publish-preview requires a non-stable preview version")
+
+    bundle = load_preview_bundle(
+        bundle_file=bundle_file,
+        expected_repository=expected_repository,
+        expected_pr_number=expected_pr_number,
+        expected_head_sha=expected_head_sha,
+        expected_base_ref=expected_base_ref,
+    )
+
+    # The uploader consumes an array of categories, convert to its syntax.
+    documents = [
+        category.model_dump(exclude_unset=True) for category in bundle.documents
+    ]
+
+    upload_rendered(documents, rdme)
+
+
+def load_preview_bundle(
+    bundle_file: Path,
+    expected_repository: str,
+    expected_pr_number: int,
+    expected_head_sha: str,
+    expected_base_ref: str,
+) -> PreviewBundle:
+    """Load and validate a preview bundle against trusted job inputs.
+
+    Args:
+        bundle_file: Path to the preview bundle JSON file.
+        expected_repository: Repository name trusted by the publishing job.
+        expected_pr_number: Pull request number trusted by the publishing job.
+        expected_head_sha: Pull request head SHA trusted by the publishing job.
+        expected_base_ref: Base branch trusted by the publishing job.
+
+    Returns:
+        The validated preview bundle as a PreviewBundle object.
+
+    Raises:
+        ValueError: If the bundle is not valid JSON or fails validation.
+        TypeError: If the top-level JSON value is not an object.
+    """
+    try:
+        bundle = json.loads(bundle_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("Preview bundle is not valid JSON") from exc
+
+    if not isinstance(bundle, dict):
+        raise TypeError("Preview bundle must be a JSON object")
+
+    return PreviewBundle.model_validate(
+        bundle,
+        context={
+            "expected_repository": expected_repository,
+            "expected_pr_number": expected_pr_number,
+            "expected_head_sha": expected_head_sha,
+            "expected_base_ref": expected_base_ref,
+        },
+    )
