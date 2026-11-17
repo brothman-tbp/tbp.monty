@@ -21,7 +21,7 @@ permissions:
 jobs:
   render:
     name: docs-preview-render
-    if: ${{ github.repository_owner == 'thousandbrainsproject' }}
+    if: ${{ github.repository_owner == 'brothman-tbp' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
